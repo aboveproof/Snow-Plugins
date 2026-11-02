@@ -855,9 +855,9 @@ var plugin = (() => {
       }
     }
     function cleanToken(value) {
-      if (typeof value !== "string") return "";
-      const token = value.trim();
-      if (token.length < 8 || token.length > 4096 || /[\s;\r\n]/.test(token)) return "";
+      if (typeof value !== "string" && typeof value !== "number") return "";
+      const token = String(value).trim().replace(/^Bearer\s+/i, "");
+      if (!token || token.length > 8192 || /[;\r\n]/.test(token)) return "";
       return token;
     }
     const NATIVE_SESSION_KEY = "MIME_NIGHTYTAB_SESSION_V1";
@@ -972,7 +972,23 @@ var plugin = (() => {
         throw new Error(`Nighty returned HTTP ${response.status}.`);
       }
       if (!response.ok) throw new Error(data?.message || data?.error || "Nighty rejected that login.");
-      if (!await saveSessionToken(data?.access_token)) throw new Error("Nighty did not return a usable login token.");
+      const candidates = [
+        data?.access_token,
+        data?.accessToken,
+        data?.token,
+        data?.session_token,
+        data?.sessionToken,
+        data?.data?.access_token,
+        data?.data?.accessToken,
+        data?.data?.token,
+        data?.result?.access_token,
+        data?.result?.token,
+        response.headers?.get?.("x-access-token"),
+        response.headers?.get?.("authorization")
+      ];
+      for (const candidate of candidates) if (await saveSessionToken(candidate)) return;
+      const shape = data && typeof data === "object" ? Object.entries(data).map(([key, value]) => `${key}:${Array.isArray(value) ? "array" : typeof value}`).join(", ") : typeof data;
+      throw new Error(`Nighty login succeeded without a readable token (${shape || "empty response"}).`);
     }
     function sessionScript(token) {
       const saved = JSON.stringify(cleanToken(token) || "");
@@ -1085,7 +1101,7 @@ var plugin = (() => {
       const [loggingIn, setLoggingIn] = React.useState(false);
       const selectedLogo = store.iconType === "grayscale" ? "white" : store.iconType;
       const sessionStatus = !sessionToken() ? "No login token was captured." : sessionDiagnostics.page === "rejected" ? "Nighty rejected the restored login token." : sessionDiagnostics.restored ? "Login token restored after launch." : sessionDiagnostics.captured ? "Login token captured and saved." : "Login token is stored.";
-      const storageStatus = `v1.14.6 · Native backup ${nativeCache() ? "available" : "unavailable"} · WebKit cookie bridge ${nativeCookieManager() ? "available" : "using page fallback"}`;
+      const storageStatus = `v1.14.7 · Native backup ${nativeCache() ? "available" : "unavailable"} · WebKit cookie bridge ${nativeCookieManager() ? "available" : "using page fallback"}`;
       const sectionLabel = (label) => h(RN.Text, { style: { color: colors.muted, fontSize: 13, lineHeight: 18, fontWeight: "600", marginLeft: 4, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 } }, label);
       const card = (...children) => h(RN.View, { style: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: "hidden" } }, ...children);
       const divider = () => h(RN.View, { style: { height: 1, backgroundColor: colors.border, marginLeft: 16 } });
@@ -1471,6 +1487,6 @@ var plugin = (() => {
   NightyTab.defaults = { url: "", scriptUtils: false, nightyPrefix: ".", iconType: "white", customIconUrl: "", showNightyButton: true, sessionHost: "", sessionToken: "", sessions: {} };
 
   // NightyTab.entry.js
-  var NightyTab_entry_default = register({ "id": "mime.nightytab", "name": "Nighty Tab", "description": "Open Nighty from Discord mobile settings or the profile action bar.", "version": "1.14.6", "authors": [{ "name": "Mime | N0_.q3", "id": "957164619061932045" }, { "name": "rico | wkcp", "id": "1361736124858630274" }], "license": "GPL-3.0-or-later", "source": "https://github.com/xMimiez/Snow-Plugins/tree/main/NightyTab" }, NightyTab);
+  var NightyTab_entry_default = register({ "id": "mime.nightytab", "name": "Nighty Tab", "description": "Open Nighty from Discord mobile settings or the profile action bar.", "version": "1.14.7", "authors": [{ "name": "Mime | N0_.q3", "id": "957164619061932045" }, { "name": "rico | wkcp", "id": "1361736124858630274" }], "license": "GPL-3.0-or-later", "source": "https://github.com/xMimiez/Snow-Plugins/tree/main/NightyTab" }, NightyTab);
   return __toCommonJS(NightyTab_entry_exports);
 })();
