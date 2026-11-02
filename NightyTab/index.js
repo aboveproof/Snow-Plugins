@@ -860,6 +860,48 @@ var plugin = (() => {
       if (token.length < 8 || token.length > 4096 || !/^[\w.~+/-]+=*$/.test(token)) return "";
       return token;
     }
+    const NATIVE_SESSION_KEY = "MIME_NIGHTYTAB_SESSION_V1";
+    function nativeCache() {
+      try {
+        for (const name of ["NativeCacheModule", "MMKVManager"]) {
+          const turbo = globalThis.__turboModuleProxy?.(name);
+          if (turbo?.getItem && turbo?.setItem) return turbo;
+          const legacy = globalThis.nativeModuleProxy?.[name];
+          if (legacy?.getItem && legacy?.setItem) return legacy;
+        }
+      } catch {
+      }
+      return null;
+    }
+    async function restoreNativeSession() {
+      const cache = nativeCache();
+      if (!cache) return;
+      try {
+        const raw = await cache.getItem(NATIVE_SESSION_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        const host = typeof saved?.host === "string" ? saved.host : "";
+        const token = cleanToken(saved?.token);
+        if (!host || !token) return;
+        const current = store.sessions && typeof store.sessions === "object" ? store.sessions : {};
+        store.sessionHost = host;
+        store.sessionToken = token;
+        store.sessions = { ...current, [host]: token };
+        r.changed();
+      } catch (error) {
+        r.error("Restore Nighty login", error);
+      }
+    }
+    function persistNativeSession(host, token) {
+      const cache = nativeCache();
+      if (!cache) return;
+      try {
+        const saved = JSON.stringify({ host, token, savedAt: Date.now() });
+        Promise.resolve(cache.setItem(NATIVE_SESSION_KEY, saved)).catch((error) => r.error("Save Nighty login", error));
+      } catch (error) {
+        r.error("Save Nighty login", error);
+      }
+    }
     function sessionToken() {
       const host = pageHost();
       if (!host) return "";
@@ -895,6 +937,7 @@ var plugin = (() => {
       store.sessionToken = token;
       store.sessions = { ...current, [host]: token };
       r.changed();
+      persistNativeSession(host, token);
       Promise.resolve(r.api.storage.flush()).catch((error) => r.error("Save Nighty login", error));
     }
     function readInset(edge) {
@@ -1292,7 +1335,8 @@ var plugin = (() => {
         return next === result ? void 0 : next;
       });
     }
-    return { Settings, NightyPage, download, start() {
+    return { Settings, NightyPage, download, async start() {
+      await restoreNativeSession();
       r.status.settingsEntry = registerSection(r, { name: "Nighty", items: [{
         key: "MIME_NIGHTY",
         title: () => "Nighty",
@@ -1322,6 +1366,6 @@ var plugin = (() => {
   NightyTab.defaults = { url: "", scriptUtils: false, nightyPrefix: ".", iconType: "white", customIconUrl: "", showNightyButton: true, sessionHost: "", sessionToken: "", sessions: {} };
 
   // NightyTab.entry.js
-  var NightyTab_entry_default = register({ "id": "mime.nightytab", "name": "Nighty Tab", "description": "Open Nighty from Discord mobile settings or the profile action bar.", "version": "1.14.1", "authors": [{ "name": "Mime | N0_.q3", "id": "957164619061932045" }, { "name": "rico | wkcp", "id": "1361736124858630274" }], "license": "GPL-3.0-or-later", "source": "https://github.com/xMimiez/Snow-Plugins/tree/main/NightyTab" }, NightyTab);
+  var NightyTab_entry_default = register({ "id": "mime.nightytab", "name": "Nighty Tab", "description": "Open Nighty from Discord mobile settings or the profile action bar.", "version": "1.14.2", "authors": [{ "name": "Mime | N0_.q3", "id": "957164619061932045" }, { "name": "rico | wkcp", "id": "1361736124858630274" }], "license": "GPL-3.0-or-later", "source": "https://github.com/xMimiez/Snow-Plugins/tree/main/NightyTab" }, NightyTab);
   return __toCommonJS(NightyTab_entry_exports);
 })();
