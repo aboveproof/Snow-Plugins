@@ -861,17 +861,44 @@ var plugin = (() => {
       return token;
     }
     const NATIVE_SESSION_KEY = "MIME_NIGHTYTAB_SESSION_V1";
-    function nativeCache() {
+    function nativeModule(...names) {
       try {
-        for (const name of ["NativeCacheModule", "MMKVManager"]) {
+        for (const name of names) {
           const turbo = globalThis.__turboModuleProxy?.(name);
-          if (turbo?.getItem && turbo?.setItem) return turbo;
+          if (turbo) return turbo;
           const legacy = globalThis.nativeModuleProxy?.[name];
-          if (legacy?.getItem && legacy?.setItem) return legacy;
+          if (legacy) return legacy;
         }
       } catch {
       }
       return null;
+    }
+    function nativeCache() {
+      const module = nativeModule("NativeCacheModule", "MMKVManager");
+      return module?.getItem && module?.setItem ? module : null;
+    }
+    function nativeCookieManager() {
+      const found = r.find("setFromResponse", "clearByName", "getAll");
+      const module = found?.default || found || nativeModule("RNCookieManagerIOS", "RNCookieManagerAndroid", "CookieManager");
+      return module?.set || module?.setFromResponse ? module : null;
+    }
+    async function persistBrowserCookie(host, token) {
+      const manager = nativeCookieManager();
+      const src = pageUrl(store.url);
+      if (!manager || !src || !host || !cleanToken(token)) return;
+      try {
+        const url = new URL(src);
+        if (url.host !== host) return;
+        const expires = new Date(Date.now() + 2592e6).toISOString();
+        if (typeof manager.set === "function") {
+          await manager.set(src, { name: "access_token", value: token, path: "/", expires, secure: url.protocol === "https:" }, true);
+        } else {
+          const secure = url.protocol === "https:" ? "; Secure" : "";
+          await manager.setFromResponse(src, `access_token=${token}; Path=/; Expires=${new Date(expires).toUTCString()}; SameSite=Lax${secure}`);
+        }
+      } catch (error) {
+        r.error("Save Nighty browser cookie", error);
+      }
     }
     async function restoreNativeSession() {
       const cache = nativeCache();
@@ -887,6 +914,7 @@ var plugin = (() => {
         store.sessionHost = host;
         store.sessionToken = token;
         store.sessions = { ...current, [host]: token };
+        await persistBrowserCookie(host, token);
         r.changed();
       } catch (error) {
         r.error("Restore Nighty login", error);
@@ -912,7 +940,7 @@ var plugin = (() => {
     }
     function sessionScript(token) {
       const saved = JSON.stringify(cleanToken(token) || "");
-      return `(() => { try { var saved = ${saved}; var persist = function (value) { if (typeof value !== 'string' || !value) return; var secure = location.protocol === 'https:' ? '; Secure' : ''; document.cookie = 'access_token=' + value + '; Path=/; Max-Age=2592000; SameSite=Lax' + secure; try { localStorage.setItem('access_token', value); } catch (e) {} }; if (saved) persist(saved); if (window.__mimeNightySession) return true; window.__mimeNightySession = true; var lastSent = ''; var send = function (value) { if (typeof value !== 'string' || !value || value === lastSent || !window.ReactNativeWebView) return; lastSent = value; window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'NIGHTY_TOKEN', token: value })); }; var readCookie = function () { try { var parts = document.cookie.split(';'); for (var i = 0; i < parts.length; i++) { var part = parts[i].trim(); if (part.indexOf('access_token=') === 0) return decodeURIComponent(part.slice(13)); } } catch (e) {} return ''; }; var publish = function () { var value = readCookie(); if (!value) { try { value = localStorage.getItem('access_token') || ''; } catch (e) {} } if (value && value !== lastSent) { persist(value); send(value); } }; publish(); var orig = window.fetch; if (typeof orig === 'function') { window.fetch = function () { var args = arguments; return Promise.resolve(orig.apply(this, args)).then(function (res) { try { var first = args[0]; var url = typeof first === 'string' ? first : (first && first.url) || ''; if (String(url).indexOf('/api/login') !== -1 && res && res.clone) res.clone().json().then(function (data) { if (data && typeof data.access_token === 'string') { persist(data.access_token); send(data.access_token); } }).catch(function () {}); } catch (e) {} return res; }); }; } document.addEventListener('visibilitychange', publish); window.addEventListener('pageshow', publish); window.addEventListener('focus', publish); window.setInterval(publish, 1000); } catch (e) {} return true; })();`;
+      return `(() => { try { var saved = ${saved}; if (window.__mimeNightySession) return true; window.__mimeNightySession = true; var lastSent = ''; var send = function (value) { if (typeof value !== 'string' || !value || value === lastSent || !window.ReactNativeWebView) return; lastSent = value; window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'NIGHTY_TOKEN', token: value })); }; var desc = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie') || Object.getOwnPropertyDescriptor(HTMLDocument.prototype, 'cookie'); var rawSet = function (value) { if (desc && desc.set) return desc.set.call(document, value); document.cookie = value; }; var persist = function (value) { if (typeof value !== 'string' || !value) return; var secure = location.protocol === 'https:' ? '; Secure' : ''; rawSet('access_token=' + encodeURIComponent(value) + '; Path=/; Max-Age=2592000; SameSite=Lax' + secure); try { localStorage.setItem('access_token', value); } catch (e) {} }; if (desc && desc.get && desc.set) { Object.defineProperty(document, 'cookie', { configurable: true, enumerable: true, get: function () { return desc.get.call(document); }, set: function (value) { var str = String(value); var match = str.match(/access_token=([^;]+)/i); if (match) { var token = ''; try { token = decodeURIComponent(match[1]); } catch (e) { token = match[1]; } str = str.replace(/;[ ]*max-age=[^;]*/ig, '').replace(/;[ ]*expires=[^;]*/ig, '') + '; Max-Age=2592000'; try { localStorage.setItem('access_token', token); } catch (e) {} send(token); } return desc.set.call(document, str); } }); } if (saved) persist(saved); var readCookie = function () { try { var parts = document.cookie.split(';'); for (var i = 0; i < parts.length; i++) { var part = parts[i].trim(); if (part.indexOf('access_token=') === 0) return decodeURIComponent(part.slice(13)); } } catch (e) {} return ''; }; var publish = function () { var value = readCookie(); if (!value) { try { value = localStorage.getItem('access_token') || ''; } catch (e) {} } if (value && value !== lastSent) { persist(value); send(value); } }; publish(); var orig = window.fetch; if (typeof orig === 'function') { window.fetch = function () { var args = arguments; return Promise.resolve(orig.apply(this, args)).then(function (res) { try { var first = args[0]; var url = typeof first === 'string' ? first : (first && first.url) || ''; if (String(url).indexOf('/api/login') !== -1 && res && res.clone) res.clone().json().then(function (data) { if (data && typeof data.access_token === 'string') { persist(data.access_token); send(data.access_token); } }).catch(function () {}); } catch (e) {} return res; }); }; } document.addEventListener('visibilitychange', publish); window.addEventListener('pageshow', publish); window.addEventListener('focus', publish); window.setInterval(publish, 1000); } catch (e) {} return true; })();`;
     }
     function pageScript(token) {
       const saved = JSON.stringify(cleanToken(token) || "");
@@ -931,13 +959,14 @@ var plugin = (() => {
       if (data?.type !== "NIGHTY_TOKEN") return;
       const token = cleanToken(data.token);
       if (!token) return;
+      persistNativeSession(host, token);
+      persistBrowserCookie(host, token);
       const current = store.sessions && typeof store.sessions === "object" ? store.sessions : {};
       if (store.sessionHost === host && cleanToken(store.sessionToken) === token && current[host] === token) return;
       store.sessionHost = host;
       store.sessionToken = token;
       store.sessions = { ...current, [host]: token };
       r.changed();
-      persistNativeSession(host, token);
       Promise.resolve(r.api.storage.flush()).catch((error) => r.error("Save Nighty login", error));
     }
     function readInset(edge) {
@@ -974,7 +1003,7 @@ var plugin = (() => {
           originWhitelist: ["http://*", "https://*"],
           javaScriptEnabled: true,
           domStorageEnabled: true,
-          cacheEnabled: true,
+          cacheEnabled: false,
           sharedCookiesEnabled: true,
           thirdPartyCookiesEnabled: true,
           incognito: false,
@@ -1366,6 +1395,6 @@ var plugin = (() => {
   NightyTab.defaults = { url: "", scriptUtils: false, nightyPrefix: ".", iconType: "white", customIconUrl: "", showNightyButton: true, sessionHost: "", sessionToken: "", sessions: {} };
 
   // NightyTab.entry.js
-  var NightyTab_entry_default = register({ "id": "mime.nightytab", "name": "Nighty Tab", "description": "Open Nighty from Discord mobile settings or the profile action bar.", "version": "1.14.2", "authors": [{ "name": "Mime | N0_.q3", "id": "957164619061932045" }, { "name": "rico | wkcp", "id": "1361736124858630274" }], "license": "GPL-3.0-or-later", "source": "https://github.com/xMimiez/Snow-Plugins/tree/main/NightyTab" }, NightyTab);
+  var NightyTab_entry_default = register({ "id": "mime.nightytab", "name": "Nighty Tab", "description": "Open Nighty from Discord mobile settings or the profile action bar.", "version": "1.14.3", "authors": [{ "name": "Mime | N0_.q3", "id": "957164619061932045" }, { "name": "rico | wkcp", "id": "1361736124858630274" }], "license": "GPL-3.0-or-later", "source": "https://github.com/xMimiez/Snow-Plugins/tree/main/NightyTab" }, NightyTab);
   return __toCommonJS(NightyTab_entry_exports);
 })();
