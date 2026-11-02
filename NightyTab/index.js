@@ -857,7 +857,7 @@ var plugin = (() => {
     function cleanToken(value) {
       if (typeof value !== "string") return "";
       const token = value.trim();
-      if (token.length < 8 || token.length > 4096 || !/^[\w.~+/-]+=*$/.test(token)) return "";
+      if (token.length < 8 || token.length > 4096 || /[\s;\r\n]/.test(token)) return "";
       return token;
     }
     const NATIVE_SESSION_KEY = "MIME_NIGHTYTAB_SESSION_V1";
@@ -943,7 +943,7 @@ var plugin = (() => {
     }
     function sessionScript(token) {
       const saved = JSON.stringify(cleanToken(token) || "");
-      return `(() => { try { var saved = ${saved}; if (window.__mimeNightySession) return true; window.__mimeNightySession = true; var lastSent = ''; var post = function (data) { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(data)); }; var send = function (value) { if (typeof value !== 'string' || !value || value === lastSent) return; lastSent = value; post({ type: 'NIGHTY_TOKEN', token: value }); }; var desc = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie') || Object.getOwnPropertyDescriptor(HTMLDocument.prototype, 'cookie'); var rawSet = function (value) { if (desc && desc.set) return desc.set.call(document, value); document.cookie = value; }; var persist = function (value) { if (typeof value !== 'string' || !value) return; var secure = location.protocol === 'https:' ? '; Secure' : ''; rawSet('access_token=' + encodeURIComponent(value) + '; Path=/; Max-Age=2592000; SameSite=Lax' + secure); try { localStorage.setItem('access_token', value); } catch (e) {} }; if (desc && desc.get && desc.set) { Object.defineProperty(document, 'cookie', { configurable: true, enumerable: true, get: function () { return desc.get.call(document); }, set: function (value) { var str = String(value); var match = str.match(/access_token=([^;]+)/i); if (match) { var token = ''; try { token = decodeURIComponent(match[1]); } catch (e) { token = match[1]; } str = str.replace(/;[ ]*max-age=[^;]*/ig, '').replace(/;[ ]*expires=[^;]*/ig, '') + '; Max-Age=2592000'; try { localStorage.setItem('access_token', token); } catch (e) {} send(token); } return desc.set.call(document, str); } }); } if (saved) persist(saved); var readCookie = function () { try { var parts = document.cookie.split(';'); for (var i = 0; i < parts.length; i++) { var part = parts[i].trim(); if (part.indexOf('access_token=') === 0) return decodeURIComponent(part.slice(13)); } } catch (e) {} return ''; }; var publish = function () { var value = readCookie(); if (!value) { try { value = localStorage.getItem('access_token') || ''; } catch (e) {} } if (value && value !== lastSent) { persist(value); send(value); } }; var report = function () { post({ type: 'NIGHTY_AUTH_STATE', login: !!document.querySelector('input[type="password"]'), cookie: !!readCookie() }); }; publish(); window.setTimeout(report, 400); var orig = window.fetch; if (typeof orig === 'function') { window.fetch = function () { var args = arguments; return Promise.resolve(orig.apply(this, args)).then(function (res) { try { var first = args[0]; var url = typeof first === 'string' ? first : (first && first.url) || ''; if (String(url).indexOf('/api/login') !== -1 && res && res.clone) res.clone().json().then(function (data) { if (data && typeof data.access_token === 'string') { persist(data.access_token); send(data.access_token); } }).catch(function () {}); } catch (e) {} return res; }); }; } document.addEventListener('DOMContentLoaded', function () { window.setTimeout(report, 400); }, { once: true }); document.addEventListener('visibilitychange', publish); window.addEventListener('pageshow', function () { publish(); window.setTimeout(report, 400); }); window.addEventListener('focus', publish); window.setInterval(publish, 1000); } catch (e) {} return true; })();`;
+      return `(() => { try { var saved = ${saved}; if (window.__mimeNightySession) return true; window.__mimeNightySession = true; var lastSent = ''; var post = function (data) { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(data)); }; var send = function (value) { if (typeof value !== 'string' || !value || value === lastSent) return; lastSent = value; post({ type: 'NIGHTY_TOKEN', token: value }); try { window.location.href = 'nightytab://session?token=' + encodeURIComponent(value); } catch (e) {} }; var desc = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie') || Object.getOwnPropertyDescriptor(HTMLDocument.prototype, 'cookie'); var rawSet = function (value) { if (desc && desc.set) return desc.set.call(document, value); document.cookie = value; }; var persist = function (value) { if (typeof value !== 'string' || !value) return; var secure = location.protocol === 'https:' ? '; Secure' : ''; rawSet('access_token=' + encodeURIComponent(value) + '; Path=/; Max-Age=2592000; SameSite=Lax' + secure); try { localStorage.setItem('access_token', value); } catch (e) {} }; if (desc && desc.get && desc.set) { Object.defineProperty(document, 'cookie', { configurable: true, enumerable: true, get: function () { return desc.get.call(document); }, set: function (value) { var str = String(value); var match = str.match(/access_token=([^;]+)/i); if (match) { var token = ''; try { token = decodeURIComponent(match[1]); } catch (e) { token = match[1]; } str = str.replace(/;[ ]*max-age=[^;]*/ig, '').replace(/;[ ]*expires=[^;]*/ig, '') + '; Max-Age=2592000'; try { localStorage.setItem('access_token', token); } catch (e) {} send(token); } return desc.set.call(document, str); } }); } if (saved) persist(saved); var readCookie = function () { try { var parts = document.cookie.split(';'); for (var i = 0; i < parts.length; i++) { var part = parts[i].trim(); if (part.indexOf('access_token=') === 0) return decodeURIComponent(part.slice(13)); } } catch (e) {} return ''; }; var publish = function () { var value = readCookie(); if (!value) { try { value = localStorage.getItem('access_token') || ''; } catch (e) {} } if (value && value !== lastSent) { persist(value); send(value); } }; var report = function () { post({ type: 'NIGHTY_AUTH_STATE', login: !!document.querySelector('input[type="password"]'), cookie: !!readCookie() }); }; publish(); window.setTimeout(report, 400); var orig = window.fetch; if (typeof orig === 'function') { window.fetch = function () { var args = arguments; return Promise.resolve(orig.apply(this, args)).then(function (res) { try { var first = args[0]; var url = typeof first === 'string' ? first : (first && first.url) || ''; if (String(url).indexOf('/api/login') !== -1 && res && res.clone) res.clone().json().then(function (data) { if (data && typeof data.access_token === 'string') { persist(data.access_token); send(data.access_token); } }).catch(function () {}); } catch (e) {} return res; }); }; } document.addEventListener('DOMContentLoaded', function () { window.setTimeout(report, 400); }, { once: true }); document.addEventListener('visibilitychange', publish); window.addEventListener('pageshow', function () { publish(); window.setTimeout(report, 400); }); window.addEventListener('focus', publish); window.setInterval(publish, 1000); } catch (e) {} return true; })();`;
     }
     function pageScript(token) {
       const saved = JSON.stringify(cleanToken(token) || "");
@@ -977,6 +977,27 @@ var plugin = (() => {
       r.changed();
       Promise.resolve(r.api.storage.flush()).catch((error) => r.error("Save Nighty login", error));
     }
+    function rememberSessionFromUrl(value) {
+      try {
+        const url = new URL(value);
+        if (url.protocol !== "nightytab:" || url.hostname !== "session") return false;
+        const token = cleanToken(url.searchParams.get("token"));
+        const host = pageHost();
+        if (token && host) {
+          persistNativeSession(host, token);
+          persistBrowserCookie(host, token);
+          const current = store.sessions && typeof store.sessions === "object" ? store.sessions : {};
+          store.sessionHost = host;
+          store.sessionToken = token;
+          store.sessions = { ...current, [host]: token };
+          sessionDiagnostics.captured = true;
+          r.changed();
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    }
     function readInset(edge) {
       try {
         const mod = r.find("initialWindowMetrics") || r.find("useSafeAreaInsets") || {};
@@ -997,6 +1018,7 @@ var plugin = (() => {
       const frame = { flex: 1, width: "100%", backgroundColor: "#080D1B", overflow: "hidden" };
       const allow = (req) => {
         const url = req?.url || "";
+        if (rememberSessionFromUrl(url)) return false;
         return !url || url === "about:blank" || url === src || !!pageUrl(url);
       };
       return h(
@@ -1008,7 +1030,7 @@ var plugin = (() => {
           source: { uri: src, ...savedSession ? { headers: { Cookie: `access_token=${savedSession}` } } : {} },
           style: { flex: 1, width: "100%", backgroundColor: "#080D1B" },
           containerStyle: { flex: 1, backgroundColor: "#080D1B" },
-          originWhitelist: ["http://*", "https://*"],
+          originWhitelist: ["http://*", "https://*", "nightytab://*"],
           javaScriptEnabled: true,
           domStorageEnabled: true,
           cacheEnabled: false,
@@ -1045,7 +1067,7 @@ var plugin = (() => {
       r.useRefresh();
       const selectedLogo = store.iconType === "grayscale" ? "white" : store.iconType;
       const sessionStatus = !sessionToken() ? "No login token was captured." : sessionDiagnostics.page === "rejected" ? "Nighty rejected the restored login token." : sessionDiagnostics.restored ? "Login token restored after launch." : sessionDiagnostics.captured ? "Login token captured and saved." : "Login token is stored.";
-      const storageStatus = `v1.14.4 · Native backup ${nativeCache() ? "available" : "unavailable"} · WebKit cookie bridge ${nativeCookieManager() ? "available" : "using page fallback"}`;
+      const storageStatus = `v1.14.5 · Native backup ${nativeCache() ? "available" : "unavailable"} · WebKit cookie bridge ${nativeCookieManager() ? "available" : "using page fallback"}`;
       const sectionLabel = (label) => h(RN.Text, { style: { color: colors.muted, fontSize: 13, lineHeight: 18, fontWeight: "600", marginLeft: 4, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 } }, label);
       const card = (...children) => h(RN.View, { style: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: "hidden" } }, ...children);
       const divider = () => h(RN.View, { style: { height: 1, backgroundColor: colors.border, marginLeft: 16 } });
@@ -1406,6 +1428,6 @@ var plugin = (() => {
   NightyTab.defaults = { url: "", scriptUtils: false, nightyPrefix: ".", iconType: "white", customIconUrl: "", showNightyButton: true, sessionHost: "", sessionToken: "", sessions: {} };
 
   // NightyTab.entry.js
-  var NightyTab_entry_default = register({ "id": "mime.nightytab", "name": "Nighty Tab", "description": "Open Nighty from Discord mobile settings or the profile action bar.", "version": "1.14.4", "authors": [{ "name": "Mime | N0_.q3", "id": "957164619061932045" }, { "name": "rico | wkcp", "id": "1361736124858630274" }], "license": "GPL-3.0-or-later", "source": "https://github.com/xMimiez/Snow-Plugins/tree/main/NightyTab" }, NightyTab);
+  var NightyTab_entry_default = register({ "id": "mime.nightytab", "name": "Nighty Tab", "description": "Open Nighty from Discord mobile settings or the profile action bar.", "version": "1.14.5", "authors": [{ "name": "Mime | N0_.q3", "id": "957164619061932045" }, { "name": "rico | wkcp", "id": "1361736124858630274" }], "license": "GPL-3.0-or-later", "source": "https://github.com/xMimiez/Snow-Plugins/tree/main/NightyTab" }, NightyTab);
   return __toCommonJS(NightyTab_entry_exports);
 })();
