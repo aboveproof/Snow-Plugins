@@ -963,7 +963,8 @@ var plugin = (() => {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username, password }),
+        credentials: "include"
       });
       let data;
       try {
@@ -972,6 +973,16 @@ var plugin = (() => {
         throw new Error(`Nighty returned HTTP ${response.status}.`);
       }
       if (!response.ok) throw new Error(data?.message || data?.error || "Nighty rejected that login.");
+      const setCookie = response.headers?.get?.("set-cookie") || response.headers?.get?.("Set-Cookie") || "";
+      let cookieToken = "";
+      const cookieMatch = String(setCookie).match(/(?:^|[,;]\s*)access_token=([^;,]+)/i);
+      if (cookieMatch) {
+        try {
+          cookieToken = decodeURIComponent(cookieMatch[1].trim());
+        } catch {
+          cookieToken = cookieMatch[1].trim();
+        }
+      }
       const candidates = [
         data?.access_token,
         data?.accessToken,
@@ -983,12 +994,19 @@ var plugin = (() => {
         data?.data?.token,
         data?.result?.access_token,
         data?.result?.token,
+        cookieToken,
+        typeof data?.message === "string" && data.message.length >= 8 && !/\s/.test(data.message) ? data.message : "",
         response.headers?.get?.("x-access-token"),
         response.headers?.get?.("authorization")
       ];
       for (const candidate of candidates) if (await saveSessionToken(candidate)) return;
       const shape = data && typeof data === "object" ? Object.entries(data).map(([key, value]) => `${key}:${Array.isArray(value) ? "array" : typeof value}`).join(", ") : typeof data;
-      throw new Error(`Nighty login succeeded without a readable token (${shape || "empty response"}).`);
+      const headerNames = [];
+      try {
+        response.headers?.forEach?.((_value, key) => headerNames.push(String(key).toLowerCase()));
+      } catch {
+      }
+      throw new Error(`Nighty login succeeded without a readable token (${shape || "empty response"}; headers:${headerNames.join(",") || "hidden"}).`);
     }
     function sessionScript(token) {
       const saved = JSON.stringify(cleanToken(token) || "");
@@ -1101,7 +1119,7 @@ var plugin = (() => {
       const [loggingIn, setLoggingIn] = React.useState(false);
       const selectedLogo = store.iconType === "grayscale" ? "white" : store.iconType;
       const sessionStatus = !sessionToken() ? "No login token was captured." : sessionDiagnostics.page === "rejected" ? "Nighty rejected the restored login token." : sessionDiagnostics.restored ? "Login token restored after launch." : sessionDiagnostics.captured ? "Login token captured and saved." : "Login token is stored.";
-      const storageStatus = `v1.14.7 · Native backup ${nativeCache() ? "available" : "unavailable"} · WebKit cookie bridge ${nativeCookieManager() ? "available" : "using page fallback"}`;
+      const storageStatus = `v1.14.8 · Native backup ${nativeCache() ? "available" : "unavailable"} · WebKit cookie bridge ${nativeCookieManager() ? "available" : "using page fallback"}`;
       const sectionLabel = (label) => h(RN.Text, { style: { color: colors.muted, fontSize: 13, lineHeight: 18, fontWeight: "600", marginLeft: 4, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 } }, label);
       const card = (...children) => h(RN.View, { style: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: "hidden" } }, ...children);
       const divider = () => h(RN.View, { style: { height: 1, backgroundColor: colors.border, marginLeft: 16 } });
@@ -1487,6 +1505,6 @@ var plugin = (() => {
   NightyTab.defaults = { url: "", scriptUtils: false, nightyPrefix: ".", iconType: "white", customIconUrl: "", showNightyButton: true, sessionHost: "", sessionToken: "", sessions: {} };
 
   // NightyTab.entry.js
-  var NightyTab_entry_default = register({ "id": "mime.nightytab", "name": "Nighty Tab", "description": "Open Nighty from Discord mobile settings or the profile action bar.", "version": "1.14.7", "authors": [{ "name": "Mime | N0_.q3", "id": "957164619061932045" }, { "name": "rico | wkcp", "id": "1361736124858630274" }], "license": "GPL-3.0-or-later", "source": "https://github.com/xMimiez/Snow-Plugins/tree/main/NightyTab" }, NightyTab);
+  var NightyTab_entry_default = register({ "id": "mime.nightytab", "name": "Nighty Tab", "description": "Open Nighty from Discord mobile settings or the profile action bar.", "version": "1.14.8", "authors": [{ "name": "Mime | N0_.q3", "id": "957164619061932045" }, { "name": "rico | wkcp", "id": "1361736124858630274" }], "license": "GPL-3.0-or-later", "source": "https://github.com/xMimiez/Snow-Plugins/tree/main/NightyTab" }, NightyTab);
   return __toCommonJS(NightyTab_entry_exports);
 })();
